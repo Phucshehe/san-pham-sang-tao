@@ -3099,9 +3099,9 @@ bgmSlider.addEventListener('input', (e) => {
     bgmAudio.setVolume(parseFloat(e.target.value));
 });
 
-// 1. Room 06 screen poster: the YouTube API is loaded only on room entry.
-const tvWidth = 8;
-const tvHeight = 4.5;
+// 1. Room 06 wide projection screen: the YouTube API is loaded only on room entry.
+const screenWidth = 8.8;
+const screenHeight = 4.95;
 const documentaryRoom = museumRooms.find(room => room.screeningRoom);
 function createRoom6PosterTexture() {
     const canvas = document.createElement('canvas');
@@ -3141,22 +3141,41 @@ function createRoom6PosterTexture() {
     return new THREE.CanvasTexture(canvas);
 }
 
-const tvMesh = new THREE.Mesh(new THREE.PlaneGeometry(tvWidth, tvHeight), new THREE.MeshBasicMaterial({ map: createRoom6PosterTexture() }));
-tvMesh.name = 'room6-documentary-screen';
-tvMesh.position.set(documentaryRoom.bounds.maxX - 0.22, 4.05, documentaryRoom.centerZ);
-tvMesh.rotation.y = -Math.PI / 2;
-tvMesh.userData = { type: 'video', id: 'room6-documentary-screen', roomId: 'room6' };
-scene.add(tvMesh);
-videoInteractables.push(tvMesh);
+const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(screenWidth, screenHeight), new THREE.MeshBasicMaterial({ map: createRoom6PosterTexture() }));
+screenMesh.name = 'room6-documentary-screen';
+screenMesh.position.set(documentaryRoom.bounds.maxX - 0.22, 4.05, documentaryRoom.centerZ);
+screenMesh.rotation.y = -Math.PI / 2;
+screenMesh.userData = { type: 'video', id: 'room6-documentary-screen', roomId: 'room6' };
+scene.add(screenMesh);
+videoInteractables.push(screenMesh);
 
-const tvFrame = new THREE.Mesh(
-    new THREE.BoxGeometry(tvWidth + 0.34, tvHeight + 0.34, 0.08),
+const screenFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(screenWidth + 0.34, screenHeight + 0.34, 0.08),
     new THREE.MeshStandardMaterial({ color: 0x171312, roughness: 0.42, metalness: 0.12 })
 );
-tvFrame.name = 'room6-screen-frame';
-tvFrame.position.set(documentaryRoom.bounds.maxX - 0.1, 4.05, documentaryRoom.centerZ);
-tvFrame.rotation.y = -Math.PI / 2;
-scene.add(tvFrame);
+screenFrame.name = 'room6-screen-frame';
+screenFrame.position.set(documentaryRoom.bounds.maxX - 0.1, 4.05, documentaryRoom.centerZ);
+screenFrame.rotation.y = -Math.PI / 2;
+scene.add(screenFrame);
+
+// Ceiling-mounted projector aimed at the wide screen.
+const projector = new THREE.Group();
+const projectorBody = new THREE.Mesh(
+    new THREE.BoxGeometry(1.25, 0.48, 0.82),
+    new THREE.MeshStandardMaterial({ color: 0x24211f, roughness: 0.5, metalness: 0.18 })
+);
+projectorBody.position.set(0, 0, 0);
+projector.add(projectorBody);
+const projectorLens = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.2, 0.18, 20),
+    new THREE.MeshStandardMaterial({ color: 0x0b0b0b, roughness: 0.18, metalness: 0.4 })
+);
+projectorLens.rotation.z = Math.PI / 2;
+projectorLens.position.x = 0.7;
+projector.add(projectorLens);
+projector.position.set(documentaryRoom.centerX + 0.8, 6.25, documentaryRoom.centerZ);
+projector.name = 'room6-ceiling-projector';
+scene.add(projector);
 
 function addRoom6WallPanel(texture, width, height, position, rotationY) {
     // These panels live on the two side walls (constant Z). Keep the wall
@@ -3285,7 +3304,7 @@ bgmAudio.setMaxDistance(40);
 bgmAudio.setVolume(0.2); // Default BGM volume (half of video)
 speakerMesh.add(bgmAudio);
 
-const YOUTUBE_VIDEO_ID = 'oNaeyv1uUr0';
+const YOUTUBE_VIDEO_ID = 'dWAXQHot4ig';
 let youtubeApiPromise = null;
 let youtubePlayer = null;
 let youtubePlayerReady = null;
@@ -3376,7 +3395,7 @@ function createYouTubePlayer() {
 function createRoom6YoutubeScreen() {
     if (youtubeScreen) {
         youtubeScreen.visible = true;
-        tvMesh.material.opacity = 0;
+        screenMesh.material.opacity = 0;
         return;
     }
     youtubeIframe = document.createElement('iframe');
@@ -3392,15 +3411,15 @@ function createRoom6YoutubeScreen() {
     youtubeIframe.style.pointerEvents = 'none';
     youtubeScreen = new CSS3DObject(youtubeIframe);
     youtubeScreen.name = 'room6-youtube-css3d-screen';
-    youtubeScreen.position.copy(tvMesh.position);
-    youtubeScreen.rotation.copy(tvMesh.rotation);
-    const screenScale = tvWidth / 960;
+    youtubeScreen.position.copy(screenMesh.position);
+    youtubeScreen.rotation.copy(screenMesh.rotation);
+    const screenScale = screenWidth / 960;
     youtubeScreen.scale.set(screenScale, screenScale, screenScale);
-    // TV normal points toward -X; offset only a few centimetres in front.
+    // Screen normal points toward -X; offset only a few centimetres in front.
     youtubeScreen.position.x -= 0.025;
     cssScene.add(youtubeScreen);
-    tvMesh.material.transparent = true;
-    tvMesh.material.opacity = 0;
+    screenMesh.material.transparent = true;
+    screenMesh.material.opacity = 0;
 }
 
 function enterRoom6Video() {
@@ -3432,7 +3451,7 @@ function leaveRoom6Video() {
     bgmAudio.setVolume(room6PreviousMusicVolume);
     if (room6MusicWasPlaying && room6PreviousMusicPaused === false) bgmElement.play().catch(() => { });
     if (youtubeScreen) youtubeScreen.visible = false;
-    tvMesh.material.opacity = 1;
+    screenMesh.material.opacity = 1;
     disableRoom6Css3dInteraction();
 }
 
