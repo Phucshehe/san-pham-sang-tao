@@ -351,12 +351,18 @@ function checkIsTouchDevice() {
 let isTouchDevice = checkIsTouchDevice();
 if (isTouchDevice) {
     camera.rotation.order = 'YXZ'; // Important for touch look
+    const mobileControlsElem = document.getElementById('mobile-controls');
+    if (mobileControlsElem) mobileControlsElem.style.display = 'block';
 }
 
 // Re-check on resize (useful for emulator toggling)
 window.addEventListener('resize', () => {
     isTouchDevice = checkIsTouchDevice();
-    if (isTouchDevice) camera.rotation.order = 'YXZ';
+    if (isTouchDevice) {
+        camera.rotation.order = 'YXZ';
+        const mobileControlsElem = document.getElementById('mobile-controls');
+        if (mobileControlsElem) mobileControlsElem.style.display = 'block';
+    }
 
     // Update camera and renderer on resize
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -372,97 +378,155 @@ let moveBackward = false;
 let moveLeft = false;
 let moveRight = false;
 
-// --- VIRTUAL JOYSTICK LOGIC ---
+// --- VIRTUAL JOYSTICK LOGIC (SMOOTH 360° ANALOG) ---
 const joystickBase = document.getElementById('joystick-base');
 const joystickStick = document.getElementById('joystick-stick');
 const touchLookZone = document.getElementById('touch-look-zone');
-const maxJoystickTravel = 30; // pixels
+const maxJoystickTravel = 34; // pixels
 
-// Always attach touch listeners (they won't fire on non-touch devices anyway)
 let joystickIdentifier = null;
+let joystickActive = false;
+let joystickInputX = 0; // -1 (left) to +1 (right)
+let joystickInputZ = 0; // -1 (backward) to +1 (forward)
 
 joystickBase.addEventListener('touchstart', (e) => {
-    e.preventDefault(); // prevent scrolling
+    e.preventDefault();
+    if (joystickIdentifier !== null) return;
     const touch = e.changedTouches[0];
     joystickIdentifier = touch.identifier;
+    joystickActive = true;
+    joystickStick.style.transition = 'none';
     updateJoystick(touch);
-});
+}, { passive: false });
 
-joystickBase.addEventListener('touchmove', (e) => {
-    e.preventDefault();
+window.addEventListener('touchmove', (e) => {
+    if (joystickIdentifier === null) return;
     for (let i = 0; i < e.changedTouches.length; i++) {
         if (e.changedTouches[i].identifier === joystickIdentifier) {
+            e.preventDefault();
             updateJoystick(e.changedTouches[i]);
             break;
         }
     }
-});
+}, { passive: false });
 
 function handleJoystickEnd(e) {
+    if (joystickIdentifier === null) return;
     for (let i = 0; i < e.changedTouches.length; i++) {
         if (e.changedTouches[i].identifier === joystickIdentifier) {
             joystickIdentifier = null;
-            joystickStick.style.transform = `translate(0px, 0px)`;
+            joystickActive = false;
+            joystickInputX = 0;
+            joystickInputZ = 0;
             moveForward = false;
             moveBackward = false;
             moveLeft = false;
             moveRight = false;
+            joystickStick.style.transition = 'transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1)';
+            joystickStick.style.transform = 'translate(0px, 0px)';
             break;
         }
     }
 }
-joystickBase.addEventListener('touchend', handleJoystickEnd);
-joystickBase.addEventListener('touchcancel', handleJoystickEnd);
+window.addEventListener('touchend', handleJoystickEnd);
+window.addEventListener('touchcancel', handleJoystickEnd);
 
 function updateJoystick(touch) {
     const rect = joystickBase.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    let dx = touch.clientX - centerX;
-    let dy = touch.clientY - centerY;
+    const dx = touch.clientX - centerX;
+    const dy = touch.clientY - centerY;
 
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance > maxJoystickTravel) {
-        dx = (dx / distance) * maxJoystickTravel;
-        dy = (dy / distance) * maxJoystickTravel;
+    const dist = Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx);
+    const clampedDist = Math.min(dist, maxJoystickTravel);
+
+    const stickX = Math.cos(angle) * clampedDist;
+    const stickY = Math.sin(angle) * clampedDist;
+    joystickStick.style.transform = `translate(${stickX}px, ${stickY}px)`;
+
+    const deadzone = 4;
+    if (dist > deadzone) {
+        const intensity = Math.min(1, (dist - deadzone) / (maxJoystickTravel - deadzone));
+        // dx > 0 is RIGHT (+), dx < 0 is LEFT (-)
+        joystickInputX = Math.cos(angle) * intensity;
+        // dy < 0 is UP/FORWARD (+), dy > 0 is DOWN/BACKWARD (-)
+        joystickInputZ = -Math.sin(angle) * intensity;
+    } else {
+        joystickInputX = 0;
+        joystickInputZ = 0;
     }
 
-    joystickStick.style.transform = `translate(${dx}px, ${dy}px)`;
-
-    // Map to movement flags
-    moveForward = dy < -10;
-    moveBackward = dy > 10;
-    moveLeft = dx < -10;
-    moveRight = dx > 10;
+    moveForward = joystickInputZ > 0.35;
+    moveBackward = joystickInputZ < -0.35;
+    moveRight = joystickInputX > 0.35;
+    moveLeft = joystickInputX < -0.35;
 }
 
-// --- TOUCH LOOK LOGIC ---
-let touchStartX, touchStartY;
-let lookSensitivity = 0.005;
+// --- TOUCH LOOK LOGIC (MULTI-TOUCH SAFE & SMOOTH) ---
+let lookTouchId = null;
+let lookStartX = 0;
+let lookStartY = 0;
+let lookTotalDistance = 0;
+let lookStartTime = 0;
+const lookSensitivity = 0.0032;
 
 touchLookZone.addEventListener('touchstart', (e) => {
-    touchStartX = e.changedTouches[0].pageX;
-    touchStartY = e.changedTouches[0].pageY;
+    if (lookTouchId !== null) return;
+    const touch = e.changedTouches[0];
+    lookTouchId = touch.identifier;
+    lookStartX = touch.pageX;
+    lookStartY = touch.pageY;
+    lookTotalDistance = 0;
+    lookStartTime = performance.now();
 });
 
-touchLookZone.addEventListener('touchmove', (e) => {
-    const touchX = e.changedTouches[0].pageX;
-    const touchY = e.changedTouches[0].pageY;
+window.addEventListener('touchmove', (e) => {
+    if (lookTouchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === lookTouchId) {
+            const touch = e.changedTouches[i];
+            const deltaX = touch.pageX - lookStartX;
+            const deltaY = touch.pageY - lookStartY;
+            lookTotalDistance += Math.hypot(deltaX, deltaY);
 
-    const deltaX = touchX - touchStartX;
-    const deltaY = touchY - touchStartY;
+            camera.rotation.y -= deltaX * lookSensitivity;
+            camera.rotation.x -= deltaY * lookSensitivity;
 
-    camera.rotation.y -= deltaX * lookSensitivity;
-    camera.rotation.x -= deltaY * lookSensitivity;
+            // Clamp pitch (-85 deg to +85 deg)
+            const maxPitch = Math.PI / 2 - 0.05;
+            camera.rotation.x = Math.max(-maxPitch, Math.min(maxPitch, camera.rotation.x));
 
-    // Clamp pitch
-    const PI_2 = Math.PI / 2;
-    camera.rotation.x = Math.max(-PI_2, Math.min(PI_2, camera.rotation.x));
+            lookStartX = touch.pageX;
+            lookStartY = touch.pageY;
+            break;
+        }
+    }
+}, { passive: true });
 
-    touchStartX = touchX;
-    touchStartY = touchY;
-});
+function handleLookEnd(e) {
+    if (lookTouchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === lookTouchId) {
+            // Quick tap for interaction (< 250ms and moved less than 12px)
+            const duration = performance.now() - lookStartTime;
+            if (duration < 250 && lookTotalDistance < 12) {
+                if (infoPanel.classList.contains('closed') &&
+                    entrancePopup.classList.contains('hidden') &&
+                    roomPopup.classList.contains('hidden') &&
+                    victoryPopup.classList.contains('hidden')) {
+                    performRaycast();
+                }
+            }
+            lookTouchId = null;
+            break;
+        }
+    }
+}
+window.addEventListener('touchend', handleLookEnd);
+window.addEventListener('touchcancel', handleLookEnd);
 
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
@@ -5523,23 +5587,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Mobile Tap (Always attach, won't fire on PC)
-let touchStartTime = 0;
-touchLookZone.addEventListener('touchstart', () => {
-    touchStartTime = Date.now();
-});
-touchLookZone.addEventListener('touchend', (e) => {
-    // If it's a quick tap (less than 200ms) and no big movement, raycast
-    if (Date.now() - touchStartTime < 200) {
-        // ensure info panel isn't open
-        if (infoPanel.classList.contains('closed') &&
-            entrancePopup.classList.contains('hidden') &&
-            roomPopup.classList.contains('hidden') &&
-            victoryPopup.classList.contains('hidden')) {
-            performRaycast();
-        }
-    }
-});
+// Mobile Tap interaction is handled cleanly in unified handleLookEnd
 
 closePanelBtn.addEventListener('click', () => {
     infoPanel.classList.add('closed');
@@ -5980,19 +6028,38 @@ function animate() {
         velocity.x -= velocity.x * 10.0 * delta;
         velocity.z -= velocity.z * 10.0 * delta;
 
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
-        direction.normalize(); // Ensure consistent movement in all directions
+        let inputX = 0;
+        let inputZ = 0;
 
+        if (isTouchDevice && joystickActive) {
+            // Smooth analog vector from virtual joystick
+            inputX = joystickInputX;
+            inputZ = joystickInputZ;
+        } else {
+            // Keyboard controls
+            inputZ = Number(moveForward) - Number(moveBackward);
+            inputX = Number(moveRight) - Number(moveLeft);
+            const keyLen = Math.hypot(inputX, inputZ);
+            if (keyLen > 1) {
+                inputX /= keyLen;
+                inputZ /= keyLen;
+            }
+        }
+
+        const inputLen = Math.hypot(inputX, inputZ);
         const speed = 40.0;
-        if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
-        if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
+        if (inputLen > 0.02) {
+            velocity.z -= inputZ * speed * delta;
+            velocity.x -= inputX * speed * delta;
+        }
 
         // Apply movement relative to camera orientation
         if (isTouchDevice) {
             // Manual movement relative to camera for mobile
             const euler = new THREE.Euler(0, camera.rotation.y, 0, 'YXZ');
-            const vec = new THREE.Vector3(velocity.x * delta, 0, velocity.z * delta);
+            // When inputX > 0 (moving right), velocity.x is negative, so -velocity.x is POSITIVE.
+            // When inputZ > 0 (moving forward), velocity.z is negative, so velocity.z is NEGATIVE.
+            const vec = new THREE.Vector3(-velocity.x * delta, 0, velocity.z * delta);
             vec.applyEuler(euler);
             camera.position.add(vec);
         } else {
