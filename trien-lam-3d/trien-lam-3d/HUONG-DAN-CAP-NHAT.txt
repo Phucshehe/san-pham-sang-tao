@@ -1,0 +1,10 @@
+CÁCH CẬP NHẬT
+1. Giải nén file này, chép đè toàn bộ vào thư mục trien-lam-3d/trien-lam-3d (thư mục có index.html, script.js).
+2. XÓA file cũ: images/room5/ha_noi_specialities.glb (bộ mô hình có con dao, không còn dùng).
+3. Chạy qua web server như trước (ví dụ GitHub Pages hoặc "npx serve"), không mở trực tiếp file:// vì trình duyệt sẽ chặn tải âm thanh và mô hình.
+
+Các file mới / đã sửa:
+- script.js, index.html
+- audio/thuyet-minh/ (89 file MP3 lời thuyết minh tiếng Việt + manifest.json)
+- tools/ (công cụ thu lại lời thuyết minh khi sửa câu chữ)
+- images/room5/SOURCES.md, images/exterior/SOURCES.md
