@@ -6054,19 +6054,10 @@ function animate() {
         }
 
         // Apply movement relative to camera orientation
-        if (isTouchDevice) {
-            // Manual movement relative to camera for mobile
-            const euler = new THREE.Euler(0, camera.rotation.y, 0, 'YXZ');
-            // When inputX > 0 (moving right), velocity.x is negative, so -velocity.x is POSITIVE.
-            // When inputZ > 0 (moving forward), velocity.z is negative, so velocity.z is NEGATIVE.
-            const vec = new THREE.Vector3(-velocity.x * delta, 0, velocity.z * delta);
-            vec.applyEuler(euler);
-            camera.position.add(vec);
-        } else {
-            // Use PointerLock Controls native methods for PC
-            controls.moveRight(-velocity.x * delta);
-            controls.moveForward(-velocity.z * delta);
-        }
+        // Same camera-relative movement for PC and mobile (moveRight/moveForward
+        // read the camera's own right/forward axes, so strafing can never invert).
+        controls.moveRight(-velocity.x * delta);
+        controls.moveForward(-velocity.z * delta);
 
         // Keep the two facade side walls solid even when one movement step
         // crosses the front-wall plane. The doorway is the only passage
